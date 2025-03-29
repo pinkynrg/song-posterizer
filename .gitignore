@@ -1,0 +1,6 @@
+__pycache__
+.DS_Store
+artist_cache
+background.jpg
+output.html
+*.pdf
