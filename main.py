@@ -119,7 +119,7 @@ def find_optimal_font_size(content, min_size=1.0, max_size=20.0, precision=0.01)
 
 def main(api_key, artist, background_url, signature_url):
 
-  albums = fetch_albums(api_key, "Lucio Dalla")
+  albums = fetch_albums(api_key, artist)
   for album in albums:
       album["songs"] = fetch_album_tracks(api_key, album)
 
