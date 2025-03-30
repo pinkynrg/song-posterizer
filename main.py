@@ -14,12 +14,8 @@ def _make_cache_key(artist):
     key_data = {"artist": artist}
     return hashlib.md5(json.dumps(key_data, sort_keys=True).encode()).hexdigest()
 
-def fetch_raw_artist(api_key, artist):
-    key = _make_cache_key(artist)
-    if key in cache:
-        return cache[key]
-    
-    genius = lyricsgenius.Genius(
+def get_genius(api_key):
+    return lyricsgenius.Genius(
         api_key,
         timeout=60,
         remove_section_headers=True,
@@ -27,45 +23,47 @@ def fetch_raw_artist(api_key, artist):
         verbose=True
     )
 
-    raw_artist = genius.search_artist(artist, sort="popularity")
-    cache[key] = raw_artist
-    return raw_artist
+def fetch_albums(api_key, artist):
+    genius_handle = get_genius(api_key)
+    next_page = 1
+    result = []
+    while next_page:
+      respose = genius_handle.search_albums(artist, per_page=50, page=next_page)
+      hits = respose['sections'][0]['hits']
+      for hit in hits:
+          album = hit.get('result')
+          local_artist = album.get('artist').get('name')
+          local_date = album.get('release_date_components') or {}
+          local_year = local_date.get('year') or {}
+          local_album_name = album.get('name')
+          if local_artist == artist and local_year:
+            result += [{ 
+                "id": album.get('id'),
+                "title": local_album_name, 
+                "artist": local_artist, 
+                "year": local_year  
+            }]
+      next_page = respose.get('next_page')
+    return sorted(result, key=lambda x: x["year"], reverse=False)
 
-def parse_sortable_date(s):
-    for fmt in ("%B %d, %Y", "%Y"):
-        try:
-            return datetime.strptime(s, fmt)
-        except Exception:
-            continue
-    return None
+def fetch_album_tracks(api_key, album):
+    
+    print(f"Fetching album tracks for {album.get('title')}")
+    
+    key = _make_cache_key(album.get('id'))
+    if key in cache:
+        return cache[key]
+    
+    genius_handle = get_genius(api_key)
+    response = genius_handle.search_album(album_id=album.get('id'))
+    songs = []
+    for track in response.tracks:
+        song = track.song
+        songs += [{"number": track.number, "lyrics": song.lyrics, "title": song.title} ]
 
-def fetch_artist(api_key, artist): 
+    cache[key] = songs
 
-    raw_artist = fetch_raw_artist(api_key, artist)
-
-    # Group songs by album
-    albums = {}
-    for song in raw_artist.songs:
-        if song.lyrics and ("(" not in song.title and "(" not in song.album.name if song.album else "Inedite"):
-          
-          album_title = song.album.name if song.album else "Inedite"
-          
-          if album_title not in albums:
-              albums[album_title] = {
-                  "album_title": album_title,
-                  "songs": []
-              }
-
-          if not albums[album_title].get("album_release_date", None):
-              albums[album_title]["album_release_date"] = parse_sortable_date(song.to_dict().get('release_date_for_display'))
-
-          albums[album_title]["songs"].append({
-              "title": song.title,
-              "lyrics": song.lyrics,
-          })
-
-    album_list = list(albums.values())
-    return album_list
+    return songs
 
 def format_album(album):
     def cleanup_lyrics(lyrics):
@@ -89,7 +87,7 @@ def format_album(album):
 
       return lyrics_cleaned
     
-    return ["<span class='album_title'>{title} ({date})</span>".format(title=album["album_title"], date=album.get('album_release_date').strftime("%Y"))] + ["<span class='song_title'> • {title} • </span> {lyrics}".format(title=song.get('title'), lyrics=cleanup_lyrics(song.get('lyrics'))) for song in album["songs"]]
+    return [f"<span class='album_title'>{album.get('title')} ({album.get('year')})</span>"] + [f"<span class='song_title'> • {song.get('title')} • </span> {cleanup_lyrics(song.get('lyrics'))}" for song in album["songs"]]
 
 def find_optimal_font_size(content, min_size=1.0, max_size=20.0, precision=0.01):
     best_size = min_size
@@ -121,10 +119,12 @@ def find_optimal_font_size(content, min_size=1.0, max_size=20.0, precision=0.01)
 
 def main(api_key, artist, background_url, signature_url):
 
-  albums = fetch_artist(api_key, artist)
-  filtered_albums = [album for album in albums if len(album["songs"]) > 0 and album["album_release_date"] is not None]
-  sorted_albums = sorted(filtered_albums, key=lambda x: x["album_release_date"])
-  formatted_albums = list(chain.from_iterable(format_album(album) for album in sorted_albums))
+  albums = fetch_albums(api_key, "Lucio Dalla")
+  for album in albums:
+      album["songs"] = fetch_album_tracks(api_key, album)
+
+  formatted_albums = list(chain.from_iterable(format_album(album) for album in albums))
+
   content = " ".join(formatted_albums)
   html_text = f'''
     <html>
