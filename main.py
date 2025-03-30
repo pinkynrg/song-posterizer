@@ -71,7 +71,7 @@ def format_album(album):
       lyrics_no_brackets = re.sub(r"\[.*?\]", "", lyrics or "")
       
       # Rimuove newlines e rimpiazza con spazio
-      lyrics_one_line = lyrics_no_brackets.replace('\n', ' · ')
+      lyrics_one_line = re.sub(r'\n+', ' · ', lyrics_no_brackets)
       
       # Normalizza gli spazi multipli
       lyrics_cleaned = re.sub(r'\s+', ' ', lyrics_one_line).strip()
@@ -119,7 +119,7 @@ def find_optimal_font_size(content, min_size=1.0, max_size=20.0, precision=0.01)
 
 def main(api_key, artist, background_url, signature_url):
 
-  albums = fetch_albums(api_key, artist)
+  albums = [album for album in fetch_albums(api_key, artist) if "live" not in album.get('title').lower()]
   for album in albums:
       album["songs"] = fetch_album_tracks(api_key, album)
 
